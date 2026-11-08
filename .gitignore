@@ -26,3 +26,5 @@ yarn-error.log*
 .idea
 /.yarn/cache
 /src/credentials.ts
+
+dist/

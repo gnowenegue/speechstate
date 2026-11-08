@@ -19,6 +19,26 @@ import {
 } from "./types";
 
 import { createSpeechRecognitionPonyfill } from "web-speech-cognitive-services";
+import { SpeechRecognizer } from "microsoft-cognitiveservices-speech-sdk";
+
+// patch SpeechRecognizer.prototype.dispose so it always performs full disposal.
+// web-speech-cognitive-services erroneously passes `disposing: false` in its finally block,
+// which bypasses disposal of the internal recognizer, leaking WebSockets and stream readers.
+if (SpeechRecognizer && SpeechRecognizer.prototype) {
+  const proto = SpeechRecognizer.prototype as unknown as {
+    dispose?: (disposing?: boolean) => Promise<void>;
+    __patchedDispose?: boolean;
+  };
+  if (proto?.dispose && !proto.__patchedDispose) {
+    const originalDispose = proto.dispose;
+    proto.dispose = function (this: unknown, disposing?: boolean) {
+      return originalDispose.call(this, true).catch((err: unknown) => {
+        console.debug("[SpeechRecognizer] dispose error (suppressed):", err);
+      });
+    };
+    proto.__patchedDispose = true;
+  }
+}
 
 export const asrMachine = setup({
   types: {
@@ -60,6 +80,7 @@ export const asrMachine = setup({
         if (input.azureAuthorizationToken) {
           const { SpeechGrammarList, SpeechRecognition } =
             createSpeechRecognitionPonyfill({
+              audioConfig: input.audioConfig,
               speechRecognitionEndpointId: input.speechRecognitionEndpointId,
               credentials: {
                 region: input.azureRegion,
@@ -123,6 +144,10 @@ export const asrMachine = setup({
         recognition.onend = function () {
           sendBack({ type: "LISTEN_COMPLETE" });
         };
+        recognition.onerror = function (event) {
+          console.debug("[ASR] onerror", event);
+          sendBack({ type: "LISTEN_COMPLETE" });
+        };
         // any: it works, but gives unexpected type error
         (recognition as any).onabort = function () {
           sendBack({ type: "LISTEN_COMPLETE" });
@@ -135,6 +160,14 @@ export const asrMachine = setup({
             recognition.abort();
           }
         });
+        return () => {
+          console.debug("[asr.callback] Cleaning up actor");
+          try {
+            recognition.abort();
+          } catch {
+            // ignore if already aborted
+          }
+        };
       },
     ),
     nluPromise: fromPromise<
@@ -182,6 +215,7 @@ export const asrMachine = setup({
     azureRegion: input.azureRegion,
     azureLanguageCredentials: input.azureLanguageCredentials,
     speechRecognitionEndpointId: input.speechRecognitionEndpointId,
+    audioConfig: input.audioConfig,
   }),
   initial: "Ready",
   on: {
@@ -224,6 +258,7 @@ export const asrMachine = setup({
           azureAuthorizationToken: context.azureAuthorizationToken,
           locale: (context.params || {}).locale || context.locale,
           speechRecognitionEndpointId: context.speechRecognitionEndpointId,
+          audioConfig: context.audioConfig,
           completeTimeout:
             (context.params || {}).completeTimeout ||
             context.asrDefaultCompleteTimeout,
@@ -270,6 +305,18 @@ export const asrMachine = setup({
       initial: "WaitForRecogniser",
       states: {
         WaitForRecogniser: {
+          after: {
+            5000: {
+              target: "#asr.Ready",
+              actions: [
+                () =>
+                  console.warn(
+                    "[ASR] Watchdog: WaitForRecogniser timed out waiting for STARTED.",
+                  ),
+                sendParent({ type: "LISTEN_COMPLETE" }),
+              ],
+            },
+          },
           on: {
             STARTED: {
               target: "NoInput",
@@ -336,6 +383,12 @@ export const asrMachine = setup({
         },
         WaitToStop: {
           entry: sendTo("asr", { type: "STOP" }),
+          after: {
+            500: {
+              actions: sendParent({ type: "LISTEN_COMPLETE" }),
+              target: "Stopped",
+            },
+          },
           on: {
             LISTEN_COMPLETE: {
               actions: sendParent({ type: "LISTEN_COMPLETE" }),

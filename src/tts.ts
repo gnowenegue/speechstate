@@ -272,6 +272,10 @@ export const ttsMachine = setup({
           sendBack({ type: "SPEAK_COMPLETE" });
           console.debug("[TTS] SPEAK_COMPLETE");
         };
+        utterance.onerror = (err) => {
+          console.error("[TTS] Speech synthesis error:", err);
+          sendBack({ type: "SPEAK_COMPLETE" });
+        };
         // if (input.visemes) {
         //   (utterance as any).onviseme = (event) => {
         //     sendBack({
@@ -280,7 +284,12 @@ export const ttsMachine = setup({
         //     });
         //   };
         // }
-        wsaTTS.speak(utterance);
+        try {
+          wsaTTS.speak(utterance);
+        } catch (err) {
+          console.error("[TTS] wsaTTS.speak failed:", err);
+          sendBack({ type: "SPEAK_COMPLETE" });
+        }
       }
     }),
   },

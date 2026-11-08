@@ -7,7 +7,7 @@ import {
   Settings,
 } from "./types";
 import { createBrowserInspector } from "@statelyai/inspect";
-import { AZURE_KEY } from "./credentials";
+import { AZURE_KEY, NLU_KEY } from "./credentials";
 
 const inspector = createBrowserInspector();
 
@@ -20,7 +20,7 @@ const azureSpeechCredentials: AzureSpeechCredentials = {
 const azureLanguageCredentials: AzureLanguageCredentials = {
   endpoint:
     "https://speechstate.cognitiveservices.azure.com/language/:analyze-conversations?api-version=2022-10-01-preview",
-  key: "",
+  key: NLU_KEY,
   deploymentName: "Appointment1",
   projectName: "appointment",
 };

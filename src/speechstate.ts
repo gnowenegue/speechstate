@@ -82,6 +82,7 @@ const speechstate = setup({
             azureLanguageCredentials: context.settings.azureLanguageCredentials,
             speechRecognitionEndpointId:
               context.settings.speechRecognitionEndpointId,
+            audioConfig: context.settings.audioConfig,
           },
         });
       },
@@ -244,15 +245,6 @@ const speechstate = setup({
                 sendParent({ type: "ASR_NOINPUT" }),
               ],
             },
-            LISTEN_COMPLETE: {
-              actions: [
-                () => console.debug("[ASR→SpSt] LISTEN_COMPLETE"),
-                sendParent({
-                  type: "LISTEN_COMPLETE",
-                }),
-              ],
-              target: ".Ready",
-            },
             STOP: "#speechstate.Stopped",
           },
           states: {
@@ -327,6 +319,15 @@ const speechstate = setup({
                         value: event.value,
                       }),
                   ],
+                },
+                LISTEN_COMPLETE: {
+                  actions: [
+                    () => console.debug("[ASR→SpSt] LISTEN_COMPLETE"),
+                    sendParent({
+                      type: "LISTEN_COMPLETE",
+                    }),
+                  ],
+                  target: ".Idle",
                 },
               },
               states: {
@@ -409,6 +410,25 @@ const speechstate = setup({
                         sendParent(({ event }) => ({
                           type: "FURHAT_BLENDSHAPES",
                           value: (event as any).value,
+                        })),
+                      ],
+                    },
+                    LISTEN_COMPLETE: {
+                      actions: () =>
+                        console.debug(
+                          "[SpSt] Absorbed late LISTEN_COMPLETE during Speaking",
+                        ),
+                    },
+                    SPEAK: {
+                      target: ".Start",
+                      reenter: true,
+                      actions: [
+                        ({ context }) => {
+                          context.ttsRef?.send({ type: "STOP" });
+                        },
+                        assign(({ event, context }) => ({
+                          bargeIn:
+                            event.value.bargeIn ?? context.settings.bargeIn,
                         })),
                       ],
                     },
@@ -590,7 +610,39 @@ const speechstate = setup({
                         value: (event as any).value,
                       }),
                   ],
+                  after: {
+                    6000: {
+                      target: "Idle",
+                      actions: [
+                        () =>
+                          console.warn(
+                            "[SpSt] Watchdog: WaitForRecogniser timed out waiting for ASR_STARTED. Resetting to Idle.",
+                          ),
+                        sendParent({ type: "LISTEN_COMPLETE" }),
+                      ],
+                    },
+                  },
                   on: {
+                    LISTEN: {
+                      target: "WaitForRecogniser",
+                      reenter: true,
+                    },
+                    SPEAK: {
+                      target: "Speaking",
+                      actions: [
+                        () =>
+                          console.debug(
+                            "[SpSt] SPEAK received while waiting for recogniser, stopping ASR",
+                          ),
+                        ({ context }) => {
+                          context.asrRef?.send({ type: "STOP" });
+                        },
+                        assign(({ event, context }) => ({
+                          bargeIn:
+                            event.value.bargeIn ?? context.settings.bargeIn,
+                        })),
+                      ],
+                    },
                     ASR_STARTED: {
                       target: "Recognising",
                       actions: [
@@ -615,6 +667,22 @@ const speechstate = setup({
                           context.asrRef.send({
                             type: "STOP",
                           }),
+                      ],
+                    },
+                    SPEAK: {
+                      target: "Speaking",
+                      actions: [
+                        () =>
+                          console.debug(
+                            "[SpSt] SPEAK received while recognising, stopping ASR",
+                          ),
+                        ({ context }) => {
+                          context.asrRef?.send({ type: "STOP" });
+                        },
+                        assign(({ event, context }) => ({
+                          bargeIn:
+                            event.value.bargeIn ?? context.settings.bargeIn,
+                        })),
                       ],
                     },
                   },

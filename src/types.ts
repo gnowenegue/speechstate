@@ -1,3 +1,5 @@
+import type { AudioConfig } from "microsoft-cognitiveservices-speech-sdk";
+
 export interface AzureSpeechCredentials {
   endpoint: string;
   key: string;
@@ -41,6 +43,7 @@ export interface Settings {
   ttsDefaultFiller?: string;
   ttsDefaultSpeechRate?: number;
   newTokenInterval?: number;
+  audioConfig?: AudioConfig;
 }
 
 export interface Agenda {
@@ -143,6 +146,7 @@ export interface ASRInit {
   azureRegion: string;
   speechRecognitionEndpointId?: string;
   azureLanguageCredentials?: AzureLanguageCredentials;
+  audioConfig?: AudioConfig;
 }
 
 export interface ASRInstanceInput {
@@ -156,6 +160,7 @@ export interface ASRPonyfillInput extends RecogniseParameters {
   azureRegion: string;
   speechRecognitionEndpointId?: string;
   locale: string;
+  audioConfig?: AudioConfig;
 }
 
 export interface TTSInit {
